@@ -55,6 +55,10 @@ pub struct CsmaConfig {
     pub ack_everything: bool,
     /// The channel on which to transmit/receive
     pub channel: config::Channel,
+    /// Allows to spread broadcast transmissions to reduce influence by hidden
+    /// terminals. By default, this setting is equivalent to having to spread at
+    /// all.
+    pub broadcast_spread: Spread,
 }
 
 impl Default for CsmaConfig {
@@ -65,6 +69,31 @@ impl Default for CsmaConfig {
             ignore_not_for_us: true,
             ack_everything: false,
             channel: config::Channel::_26,
+            broadcast_spread: Spread::default(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Spread {
+    pub offset: Duration,
+    pub period: Duration,
+    pub spread_count: usize,
+}
+
+impl Spread {
+    pub fn spread_delay<RNG: RngCore>(&self, rng: &mut RNG) -> Duration {
+        self.offset + self.period * (rng.next_u32() as usize % self.spread_count)
+    }
+}
+
+impl Default for Spread {
+    fn default() -> Self {
+        Self {
+            offset: Duration::from_us(0),
+            period: Duration::from_us(0),
+            spread_count: 0,
         }
     }
 }
@@ -347,6 +376,39 @@ where
         }
     }
 
+    async fn perform_tx_spread<'a, RF>(
+        &self,
+        frame: &'a mut [u8],
+        timer: &mut TIMER,
+    ) -> Result<(), TransmissionTaskError<RF::Error>>
+    where
+        RF: RadioFrameMut<&'a mut [u8]>,
+    {
+        let frame = RF::new_checked(frame).map_err(TransmissionTaskError::InvalidDeviceFrame)?;
+        let frame =
+            Frame::new(frame.data()).map_err(|_err| TransmissionTaskError::InvalidIEEEFrame)?;
+
+        let Some(dst_addr) = frame.addressing().and_then(|addr| addr.dst_address()) else {
+            return Ok(());
+        };
+
+        let spread_delay = if dst_addr.is_broadcast() {
+            self.config
+                .broadcast_spread
+                .spread_delay(&mut *self.rng.lock().await)
+        } else {
+            Duration::from_us(0)
+        };
+
+        // Safely extract the spread delay and if it is not ok, do not wait
+        let Ok(spread_delay_us) = spread_delay.as_us().try_into() else {
+            return Ok(());
+        };
+        timer.delay_us(spread_delay_us).await;
+
+        Ok(())
+    }
+
     async fn transmit_package_task(&self, wants_to_transmit_signal: Sender<'_, ()>) -> !
     where
         R: Radio,
@@ -360,8 +422,6 @@ where
         'outer: loop {
             // Wait until we have a frame to send
             let mut tx = self.driver.transmit().await;
-
-            yield_now().await;
 
             // Enable ACK in frame coming from higher layers
             let mut sequence_number = None;
@@ -381,6 +441,11 @@ where
                         .await;
                 }
             }
+
+            // We already have complained about the validity of the frame, so we won't do that here again
+            let _ = self
+                .perform_tx_spread::<R::RadioFrame<_>>(&mut tx.buffer, &mut timer)
+                .await;
 
             let mut radio_guard = None;
             'ack: for i_ack in 0..MAC_MAX_FRAME_RETIES + 1 {
@@ -491,10 +556,6 @@ pub mod tests {
             radio.inner(|inner| {
                 inner.assert_nxt.append(
                     &mut [
-                        TestRadioEvent::PrepareReceive,
-                        // By default we receive
-                        TestRadioEvent::Receive,
-                        TestRadioEvent::CancelCurrentOperation,
                         TestRadioEvent::PrepareTransmit,
                         // Then we get the request to transmit
                         TestRadioEvent::Transmit,
