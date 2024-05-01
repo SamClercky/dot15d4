@@ -84,7 +84,11 @@ pub struct Spread {
 
 impl Spread {
     pub fn spread_delay<RNG: RngCore>(&self, rng: &mut RNG) -> Duration {
-        self.offset + self.period * (rng.next_u32() as usize % self.spread_count)
+        if self.spread_count == 0 {
+            Duration::from_us(0)
+        } else {
+            self.offset + self.period * (rng.next_u32() as usize % self.spread_count)
+        }
     }
 }
 

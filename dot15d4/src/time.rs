@@ -37,6 +37,13 @@ impl Duration {
     }
 }
 
+#[cfg(feature = "defmt")]
+impl defmt::Format for Duration {
+    fn format(&self, fmt: defmt::Formatter) {
+        defmt::write!(fmt, "duration of {}us", self.as_us());
+    }
+}
+
 impl core::ops::Sub for Instant {
     type Output = Self;
 
