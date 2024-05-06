@@ -20,6 +20,11 @@ mod constants {
     pub const MAC_AIFS_PERIOD: Duration = Duration::from_us(1000);
     pub const MAC_SIFS_PERIOD: Duration = Duration::from_us(1000); // TODO: SIFS=XXX
     pub const MAC_LIFS_PERIOD: Duration = Duration::from_us(10_000); // TODO: LIFS=XXX
+
+    /// Spread configuration
+    pub const BROADCAST_SPREAD_OFFSET: Duration = Duration::from_us(0);
+    pub const BROADCAST_SPREAD_INTERVAL: Duration = Duration::from_us(0);
+    pub const BROADCAST_SPREAD_COUNT: usize = 0;
 }
 
 #[cfg(not(test))]

@@ -95,9 +95,9 @@ impl Spread {
 impl Default for Spread {
     fn default() -> Self {
         Self {
-            offset: Duration::from_us(0),
-            period: Duration::from_us(0),
-            spread_count: 0,
+            offset: BROADCAST_SPREAD_OFFSET,
+            period: BROADCAST_SPREAD_INTERVAL,
+            spread_count: BROADCAST_SPREAD_COUNT,
         }
     }
 }
