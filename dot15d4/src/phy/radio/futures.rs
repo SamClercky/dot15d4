@@ -1,6 +1,8 @@
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 
+use defmt::trace;
+
 use super::Radio;
 use crate::phy::config::{RxConfig, TxConfig};
 
@@ -80,5 +82,20 @@ pub async fn receive<'task, R: Radio>(
     let result = radio.receive().await;
 
     on_drop.defuse(); // Prevent the cancel operation from happening
+
+    // Discard if too low lqi
+    let len = data[0] - 2;
+    if len >= 127 {
+        return false;
+    }
+    let lqi = data[1 + len as usize].saturating_mul(4);
+    let min_lqi = option_env!("MIN_LQI")
+        .and_then(|lqi| lqi.parse().ok())
+        .unwrap_or_default();
+    if len >= 3 && lqi < min_lqi {
+        crate::trace!("LQI is too low: {} < {}", lqi, min_lqi);
+        return false;
+    }
+
     result
 }
