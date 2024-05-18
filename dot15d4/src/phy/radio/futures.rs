@@ -1,8 +1,6 @@
 use core::cell::RefCell;
 use core::mem::MaybeUninit;
 
-use defmt::trace;
-
 use super::Radio;
 use crate::phy::config::{RxConfig, TxConfig};
 
